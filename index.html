@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>수도권 건축 고도제한 지도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+
+/* Layout: full-bleed chart-style map, one floating instrument panel (left on desktop, bottom sheet on phone) */
+:root{
+  --ground:#e7ebef; --land:#f6f7f8; --line:#9aa6b2; --line-strong:#4a5866;
+  --panel:#ffffff; --ink:#17212b; --muted:#5d6b78; --rule:#dbe1e7; --accent:#1f5fa8;
+  --runway:#17212b;
+  --f-body:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0d1419; --land:#18222b; --line:#3d4b58; --line-strong:#8797a6;
+  --panel:#141d25; --ink:#e6edf3; --muted:#93a3b2; --rule:#26333f; --accent:#6aa8ec; --runway:#e6edf3; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --ground:#0d1419; --land:#18222b; --line:#3d4b58; --line-strong:#8797a6;
+  --panel:#141d25; --ink:#e6edf3; --muted:#93a3b2; --rule:#26333f; --accent:#6aa8ec; --runway:#e6edf3; color-scheme:dark}
+html,body{height:100%}
+body{background:var(--ground);color:var(--ink);font-family:var(--f-body);font-size:14px;overflow:hidden}
+#map{position:absolute;inset:0;background:var(--ground)}
+
+.panel{position:absolute;z-index:1000;top:calc(12px + env(safe-area-inset-top,0px));left:calc(12px + env(safe-area-inset-left,0px));
+  width:340px;max-height:calc(100% - 24px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+  background:var(--panel);border:1px solid var(--rule);border-radius:10px;display:flex;flex-direction:column;overflow:hidden;
+  box-shadow:0 6px 24px rgba(10,20,30,.18)}
+.panel-head{padding:14px 16px 12px;border-bottom:1px solid var(--rule);display:flex;gap:10px;align-items:flex-start}
+.panel-head h1{font-size:17px;font-weight:700;margin:0;letter-spacing:-.01em;text-wrap:balance}
+.panel-head p{margin:3px 0 0;color:var(--muted);font-size:12px}
+.badge{font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;border:1px solid #c2410c;color:#c2410c;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.toggle-sheet{display:none;margin-left:auto;background:none;border:1px solid var(--rule);color:var(--ink);border-radius:6px;padding:4px 8px;font:inherit;font-size:12px;cursor:pointer}
+.panel-body{overflow-y:auto;padding:4px 16px 16px;display:flex;flex-direction:column;gap:16px}
+.sec h2{font-family:var(--f-mono);font-size:10.5px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:12px 0 8px}
+
+.legend{display:flex;flex-direction:column;gap:2px}
+.legend label{display:grid;grid-template-columns:16px 22px 1fr auto;align-items:center;gap:8px;padding:4px 6px;border-radius:6px;cursor:pointer}
+.legend label:hover{background:color-mix(in srgb,var(--accent) 8%,transparent)}
+.legend input{margin:0;accent-color:var(--accent)}
+.sw{width:22px;height:12px;border-radius:2px}
+.legend .rng{font-family:var(--f-mono);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.legend label.off .sw{opacity:.25}
+
+.layers{display:flex;flex-direction:column;gap:6px}
+.layers label{display:flex;gap:8px;align-items:center;cursor:pointer}
+.layers input{accent-color:var(--accent);margin:0}
+
+.probe{border:1px solid var(--rule);border-radius:8px;padding:12px}
+.probe.empty{color:var(--muted);font-size:13px;border-style:dashed}
+.probe .big{display:flex;align-items:baseline;gap:8px}
+.probe .big b{font-family:var(--f-mono);font-size:28px;font-weight:500;font-variant-numeric:tabular-nums}
+.probe .big span{color:var(--muted)}
+.probe .where{font-size:12px;color:var(--muted);font-family:var(--f-mono);margin-top:2px}
+.probe .gov{margin-top:8px;display:flex;align-items:center;gap:8px;font-size:13px}
+.probe ul{list-style:none;margin:10px 0 0;padding:10px 0 0;border-top:1px solid var(--rule);display:flex;flex-direction:column;gap:5px}
+.probe li{display:flex;justify-content:space-between;gap:10px;font-size:12.5px}
+.probe li span:last-child{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.probe li.min{font-weight:700}
+.probe a{color:var(--accent);font-size:12px}
+
+.search{display:flex;flex-direction:column;gap:6px}
+.search input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit}
+.search input:focus,.toggle-sheet:focus-visible,.chips button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chips button{font:inherit;font-size:12px;padding:4px 9px;border:1px solid var(--rule);border-radius:999px;background:transparent;color:var(--ink);cursor:pointer}
+.chips button:hover{border-color:var(--accent);color:var(--accent)}
+.note{font-size:11.5px;color:var(--muted);line-height:1.55}
+.note b{color:var(--ink);font-weight:500}
+
+.ap-label{font-family:var(--f-mono);font-size:11px;color:var(--ink);background:var(--panel);border:1px solid var(--line-strong);padding:1px 5px;border-radius:3px;white-space:nowrap;box-shadow:none}
+
+@media (max-width:640px){
+  .panel{left:0;right:0;top:auto;bottom:0;width:auto;border-radius:12px 12px 0 0;border-left:0;border-right:0;border-bottom:0;
+    max-height:58%;padding-bottom:env(safe-area-inset-bottom,0px);
+    padding-left:max(0px,env(safe-area-inset-left,0px));padding-right:max(0px,env(safe-area-inset-right,0px))}
+  .panel.collapsed .panel-body{display:none}
+  .toggle-sheet{display:block}
+  .panel-head .badge{display:none}
+}
+
+body{margin:0}
+[hidden]{display:none!important}
+:root{padding:0}
+.ap-label{margin-left:10px}
+.pin{width:14px;height:14px;border-radius:50%;border:2px solid #17212b;box-shadow:0 0 0 2px #fff;transform:translate(-50%,-50%)}
+.search-row{display:flex;gap:6px}
+.search-row input{flex:1;min-width:0}
+.search-row button,.setup button{font:inherit;font-size:13px;padding:8px 12px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:#fff;cursor:pointer;white-space:nowrap}
+.results{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border:1px solid var(--rule);border-radius:6px;overflow:hidden}
+.results:empty{display:none}
+.results li button{all:unset;box-sizing:border-box;display:block;width:100%;padding:8px 10px;cursor:pointer;border-top:1px solid var(--rule)}
+.results li:first-child button{border-top:0}
+.results li button:hover,.results li button:focus-visible{background:color-mix(in srgb,var(--accent) 10%,transparent)}
+.results b{display:block;font-size:13px;font-weight:500}
+.results small{color:var(--muted);font-size:11.5px}
+.results .msg{padding:8px 10px;color:var(--muted);font-size:12.5px}
+.probe .addr{font-size:13px;margin-top:4px}
+.setup{position:absolute;inset:0;z-index:2000;display:grid;place-items:center;background:var(--ground);padding:16px}
+.setup-card{max-width:520px;width:100%;box-sizing:border-box;background:var(--panel);border:1px solid var(--rule);border-radius:10px;padding:20px;display:flex;flex-direction:column;gap:12px}
+.setup-card h2{margin:0;font-size:18px}
+.setup-card ol{margin:0;padding-left:20px;line-height:1.7;color:var(--muted);font-size:13px}
+.setup-card ol b{color:var(--ink);font-weight:500}
+.setup-card code{font-family:var(--f-mono);font-size:12px;background:color-mix(in srgb,var(--accent) 10%,transparent);padding:1px 4px;border-radius:3px}
+.setup-card input{padding:9px 10px;border:1px solid var(--rule);border-radius:6px;background:var(--panel);color:var(--ink);font:inherit;font-family:var(--f-mono)}
+.setup-card .err{color:#c2410c;font-size:13px;margin:0}
+.setup-card a{color:var(--accent)}
+.heat-canvas{position:absolute;pointer-events:none;opacity:.85}
+</style>
+</head>
+<body>
+<div id="map" aria-label="고도제한 지도"></div>
+
+<aside class="panel" id="panel" hidden>
+  <div class="panel-head">
+    <div style="min-width:0">
+      <h1>수도권 건축 고도제한 지도</h1>
+      <p>지도를 누르거나 주소를 검색하면 그 지점의 최고 허용 높이를 계산해요</p>
+    </div>
+    <span class="badge">데모 · 근사값</span>
+    <button class="toggle-sheet" id="toggleSheet" type="button" aria-expanded="true">접기</button>
+  </div>
+  <div class="panel-body">
+    <section class="sec">
+      <h2>주소·장소 검색</h2>
+      <form class="search" id="searchForm">
+        <div class="search-row">
+          <input id="q" type="search" placeholder="예: 송파구 올림픽로 300, 목동역" autocomplete="off">
+          <button type="submit">검색</button>
+        </div>
+        <ul class="results" id="results"></ul>
+      </form>
+    </section>
+
+    <section class="sec">
+      <h2>선택 지점</h2>
+      <div class="probe empty" id="probe">지도에서 아무 곳이나 누르거나 주소를 검색해 보세요. 적용되는 제한 표면과 고도지구를 모두 나열하고, 가장 낮은 값을 최종 제한으로 보여줘요.</div>
+    </section>
+
+    <section class="sec">
+      <h2>제한 높이 (색상 범례)</h2>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <section class="sec">
+      <h2>표시 레이어</h2>
+      <div class="layers">
+        <label><input type="checkbox" id="lyAirport" checked> 비행장 장애물 제한표면 (공항시설법·군사기지법)</label>
+        <label><input type="checkbox" id="lyZone" checked> 서울시 고도지구 (도시계획)</label>
+      </div>
+    </section>
+
+    <section class="sec">
+      <h2>바로 가기</h2>
+      <div class="chips" id="chips"></div>
+    </section>
+
+    <section class="sec">
+      <h2>이 데모에 대해</h2>
+      <p class="note">비행장 제한표면은 ICAO 기준(민간)과 군 비행안전구역 기준(군·민군겸용)의 <b>표준 치수를 활주로 하나로 단순화</b>해 계산했어요. 높이는 <b>비행장 표고 기준</b>이고, 고도지구는 <b>지표 기준</b>이에요. 고도지구 경계와 높이는 위치를 보여주기 위한 예시예요. 실제 인허가 판단에는 토지이음(eum.go.kr) 토지이용계획과 관할 기관 협의 결과를 확인하세요.</p>
+      <p class="note"><a href="#" id="resetKey">카카오 앱 키 다시 입력</a></p>
+    </section>
+  </div>
+</aside>
+
+<div class="setup" id="setup" hidden>
+  <form class="setup-card" id="setupForm">
+    <h2>카카오 지도 앱 키가 필요해요</h2>
+    <ol>
+      <li><a href="https://developers.kakao.com" target="_blank" rel="noopener">Kakao Developers</a>에서 <b>애플리케이션 추가</b></li>
+      <li><b>앱 설정 → 플랫폼 → Web</b>에 이 페이지 주소를 등록 (지금 주소: <code id="originNow"></code>)</li>
+      <li><b>제품 설정 → 카카오맵</b>을 <b>사용 설정 ON</b></li>
+      <li><b>앱 키</b>의 <b>JavaScript 키</b>를 아래에 붙여 넣기</li>
+    </ol>
+    <input id="keyInput" placeholder="JavaScript 키 (32자리)" autocomplete="off" spellcheck="false">
+    <p class="err" id="setupErr" hidden></p>
+    <button type="submit">지도 열기</button>
+    <p class="note" style="margin:0">키는 이 브라우저에만 저장돼요. 파일 맨 위 <code>KAKAO_APPKEY</code>에 넣어 두면 누구나 입력 없이 볼 수 있어요.</p>
+  </form>
+</div>
+
+<script>
+/* 여기에 JavaScript 키를 넣으면 입력 화면 없이 바로 열려요 */
+const KAKAO_APPKEY = '';
+</script>
+<script>
+/* ---------- 색상 구간 ---------- */
+const BINS = [
+  {id:'b0', max:0,   color:'#6d0a1c', label:'건축 불가', rng:'0 m'},
+  {id:'b1', max:20,  color:'#d1252a', label:'매우 엄격', rng:'≤ 20 m'},
+  {id:'b2', max:44.99, color:'#ef6c1f', label:'엄격',     rng:'20–45 m 미만'},
+  {id:'b3', max:60,  color:'#f2a516', label:'수평표면', rng:'45–60 m'},
+  {id:'b4', max:100, color:'#e1cf2b', label:'완만',     rng:'60–100 m'},
+  {id:'b5', max:150, color:'#93c33f', label:'원추·외곽', rng:'100–150 m'},
+  {id:'b6', max:Infinity, color:'#3a9f98', label:'외부수평', rng:'> 150 m'},
+];
+const binOn = Object.fromEntries(BINS.map(b=>[b.id,true]));
+function binFor(h){ for(const b of BINS){ if(h<=b.max) return b; } return BINS[BINS.length-1]; }
+const rgb = BINS.map(b=>[parseInt(b.color.slice(1,3),16),parseInt(b.color.slice(3,5),16),parseInt(b.color.slice(5,7),16)]);
+
+/* ---------- 비행장 (활주로 하나로 단순화한 근사 좌표·방위) ---------- */
+const AIRPORTS = [
+  {name:'김포국제공항', short:'김포', lat:37.5583, lng:126.7906, elev:18, hdg:141, len:3600, kind:'civil'},
+  {name:'인천국제공항', short:'인천', lat:37.4602, lng:126.4407, elev:7,  hdg:154, len:3750, kind:'civil'},
+  {name:'서울공항(성남)', short:'서울공항', lat:37.4449, lng:127.1139, elev:28, hdg:18,  len:2950, kind:'mil'},
+  {name:'수원비행장', short:'수원', lat:37.2394, lng:127.0071, elev:27, hdg:148, len:2740, kind:'mil'},
+  {name:'오산비행장', short:'오산', lat:37.0906, lng:127.0298, elev:11, hdg:86,  len:2740, kind:'mil'},
+  {name:'김해국제공항', short:'김해', lat:35.1795, lng:128.9382, elev:4,  hdg:178, len:3200, kind:'mil'},
+  {name:'제주국제공항', short:'제주', lat:33.5113, lng:126.4930, elev:36, hdg:63,  len:3180, kind:'civil'},
+  {name:'대구국제공항', short:'대구', lat:35.8941, lng:128.6589, elev:35, hdg:135, len:2755, kind:'mil'},
+  {name:'청주국제공항', short:'청주', lat:36.7166, lng:127.4991, elev:58, hdg:58,  len:2744, kind:'mil'},
+  {name:'광주공항', short:'광주', lat:35.1264, lng:126.8089, elev:12, hdg:41,  len:2835, kind:'mil'},
+];
+// 표면 치수 (m). civil: ICAO 계기 정밀접근 활주로(코드 4) / mil: 군 비행안전구역 1~6구역
+const SPEC = {
+  civil:{stripHalf:150, stripExt:60, innerR:4000, innerH:45, conW:2000, outerR:0, outerH:0,
+         app:[{to:3000,s:0.02},{to:6600,s:0.025},{to:15000,s:0}], appHalf0:150, appDiv:0.15, appCap:150,
+         names:{strip:'착륙대', tr:'전이표면 (1:7)', app:'진입표면', inner:'수평표면', con:'원추표면 (1:20)'}},
+  mil:{stripHalf:305, stripExt:61, innerR:2286, innerH:45, conW:2134, outerR:13716, outerH:152,
+         app:[{to:7600,s:0.02},{to:15240,s:0}], appHalf0:305, appDiv:0.14, appCap:152,
+         names:{strip:'제1구역 (활주로)', tr:'제3구역 전이표면', app:'제2구역 접근표면', inner:'제4구역 내부수평', con:'제5구역 원추표면', outer:'제6구역 외부수평'}},
+};
+for(const a of AIRPORTS){
+  const r = a.hdg*Math.PI/180; a.ux=Math.sin(r); a.uy=Math.cos(r);
+  a.kx = 111320*Math.cos(a.lat*Math.PI/180); a.ky = 110540;
+  const s=SPEC[a.kind]; a.reach = a.len/2 + Math.max(s.innerR+s.conW, s.outerR, 15300);
+}
+function approachH(s,x){
+  let h=0, prev=0;
+  for(const seg of s.app){ if(x<=seg.to){ return Math.min(s.appCap, h + (x-prev)*seg.s); } h+=(seg.to-prev)*seg.s; prev=seg.to; }
+  return null;
+}
+function airportLimits(a, lat, lng, out){
+  const x=(lng-a.lng)*a.kx, y=(lat-a.lat)*a.ky;
+  if(Math.abs(x)>a.reach||Math.abs(y)>a.reach) return;
+  const s=SPEC[a.kind], half=a.len/2;
+  const al=x*a.ux+y*a.uy, b=Math.abs(x*a.uy-y*a.ux), aa=Math.abs(al);
+  const da=Math.max(aa-half,0), d=Math.hypot(da,b);
+  const push=(k,h)=>out.push({src:a.short, name:s.names[k], h, ref:'표고', elev:a.elev});
+  if(aa<=half+s.stripExt){
+    if(b<=s.stripHalf) push('strip',0);
+    else { const t=(b-s.stripHalf)/7; if(t<s.innerH) push('tr',t); }
+  }
+  const xa=aa-half-s.stripExt;
+  if(xa>=0 && b<=s.appHalf0+s.appDiv*xa){ const h=approachH(s,xa); if(h!==null) push('app',h); }
+  if(d<=s.innerR) push('inner',s.innerH);
+  else if(d<=s.innerR+s.conW) push('con',s.innerH+(d-s.innerR)*0.05);
+  else if(s.outerR && d<=s.outerR) push('outer',s.outerH);
+}
+
+/* ---------- 서울시 고도지구 (예시 경계) ---------- */
+const ZONES = [
+  {name:'남산 주변 고도지구', h:20, ring:[[37.5600,126.9790],[37.5605,126.9900],[37.5580,126.9990],[37.5520,127.0040],[37.5460,127.0010],[37.5430,126.9930],[37.5440,126.9830],[37.5480,126.9770],[37.5540,126.9750]],
+   hole:[[37.5560,126.9840],[37.5560,126.9930],[37.5515,126.9960],[37.5480,126.9910],[37.5490,126.9840],[37.5520,126.9815]]},
+  {name:'북한산 주변 고도지구', h:28, ring:[[37.6880,127.0080],[37.6870,127.0230],[37.6700,127.0260],[37.6550,127.0240],[37.6400,127.0200],[37.6290,127.0130],[37.6300,127.0040],[37.6430,127.0080],[37.6580,127.0110],[37.6730,127.0100]]},
+  {name:'경복궁 주변 고도지구', h:16, ring:[[37.5870,126.9680],[37.5880,126.9760],[37.5860,126.9870],[37.5800,126.9910],[37.5740,126.9880],[37.5730,126.9780],[37.5745,126.9690],[37.5800,126.9660]]},
+  {name:'구기·평창 고도지구', h:24, ring:[[37.6150,126.9530],[37.6160,126.9650],[37.6090,126.9720],[37.6000,126.9700],[37.5990,126.9600],[37.6050,126.9520]]},
+  {name:'국회의사당 주변 고도지구', h:65, ring:[[37.5345,126.9110],[37.5350,126.9205],[37.5300,126.9230],[37.5265,126.9180],[37.5275,126.9105]]},
+];
+for(const z of ZONES){
+  const all=z.ring; z.minLat=Math.min(...all.map(p=>p[0])); z.maxLat=Math.max(...all.map(p=>p[0]));
+  z.minLng=Math.min(...all.map(p=>p[1])); z.maxLng=Math.max(...all.map(p=>p[1]));
+}
+function pip(ring,lat,lng){
+  let inside=false;
+  for(let i=0,j=ring.length-1;i<ring.length;j=i++){
+    const [yi,xi]=ring[i],[yj,xj]=ring[j];
+    if(((yi>lat)!==(yj>lat)) && (lng < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
+/* ---------- 지점 계산 ---------- */
+const show = {airport:true, zone:true};
+function limitsAt(lat,lng){
+  const out=[];
+  if(show.airport) for(const a of AIRPORTS) airportLimits(a,lat,lng,out);
+  if(show.zone) for(const z of ZONES){
+    if(lat<z.minLat||lat>z.maxLat||lng<z.minLng||lng>z.maxLng) continue;
+    if(pip(z.ring,lat,lng) && !(z.hole && pip(z.hole,lat,lng))) out.push({src:'서울시', name:z.name, h:z.h, ref:'지표'});
+  }
+  let min=null; for(const o of out){ if(!min||o.h<min.h) min=o; }
+  return {list:out, min};
+}
+
+
+
+/* ---------- 앱 키 & SDK 로드 ---------- */
+const $ = id => document.getElementById(id);
+function storedKey(){ try{ return localStorage.getItem('kakaoAppKey')||''; }catch(e){ return ''; } }
+function saveKey(k){ try{ k?localStorage.setItem('kakaoAppKey',k):localStorage.removeItem('kakaoAppKey'); }catch(e){} }
+const appKey = new URLSearchParams(location.search).get('appkey') || KAKAO_APPKEY || storedKey();
+
+function showSetup(msg){
+  $('setup').hidden=false; $('panel').hidden=true;
+  $('originNow').textContent = location.origin==='null' ? '(파일로 열면 안 돼요. 웹서버에서 열어 주세요)' : location.origin;
+  if(msg){ $('setupErr').textContent=msg; $('setupErr').hidden=false; }
+  $('keyInput').value = storedKey();
+}
+$('setupForm').addEventListener('submit',e=>{
+  e.preventDefault(); const k=$('keyInput').value.trim();
+  if(!/^[0-9a-f]{32}$/i.test(k)){ $('setupErr').textContent='JavaScript 키는 영문·숫자 32자리예요. 다시 확인해 주세요.'; $('setupErr').hidden=false; return; }
+  saveKey(k); location.reload();
+});
+$('resetKey').addEventListener('click',e=>{ e.preventDefault(); saveKey(''); location.reload(); });
+
+if(!appKey) showSetup();
+else {
+  const s=document.createElement('script');
+  s.src=`https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(appKey)}&libraries=services&autoload=false`;
+  s.onload=()=> window.kakao && kakao.maps ? kakao.maps.load(init) : showSetup('카카오 지도를 불러오지 못했어요. 키와 도메인 등록을 확인해 주세요.');
+  s.onerror=()=>showSetup('카카오 지도 SDK를 불러오지 못했어요. 키가 맞는지, 이 주소가 플랫폼(Web)에 등록돼 있는지, 카카오맵이 사용 설정돼 있는지 확인해 주세요.');
+  document.head.appendChild(s);
+}
+
+/* ---------- 지도 ---------- */
+function init(){
+  $('panel').hidden=false;
+  const K=kakao.maps;
+  const map=new K.Map($('map'),{center:new K.LatLng(37.48,126.92),level:9});
+  map.addControl(new K.MapTypeControl(),K.ControlPosition.TOPRIGHT);
+  map.addControl(new K.ZoomControl(),K.ControlPosition.RIGHT);
+  const geocoder=new K.services.Geocoder(), places=new K.services.Places();
+
+  /* 래스터 오버레이: 화면(+여백)을 셀로 나눠 제한 높이를 계산해 칠함 */
+  function Heat(){ this.cv=document.createElement('canvas'); this.cv.className='heat-canvas'; }
+  Heat.prototype=new K.AbstractOverlay();
+  Heat.prototype.onAdd=function(){ this.getPanels().overlayLayer.appendChild(this.cv); };
+  Heat.prototype.onRemove=function(){ this.cv.remove(); };
+  Heat.prototype.draw=function(){};
+  Heat.prototype.render=function(){
+    const proj=this.getProjection(), el=$('map'), W=el.clientWidth, H=el.clientHeight, M=Math.round(Math.max(W,H)*0.25);
+    const step = map.getLevel()>=11 ? 6 : 5;
+    const w=W+2*M, h=H+2*M, cv=this.cv;
+    const o=proj.pointFromCoords(proj.coordsFromContainerPoint(new K.Point(-M,-M)));
+    cv.width=w; cv.height=h; cv.style.left=o.x+'px'; cv.style.top=o.y+'px'; cv.style.width=w+'px'; cv.style.height=h+'px';
+    const ctx=cv.getContext('2d'), img=ctx.createImageData(w,h), d=img.data;
+    for(let y=0;y<h;y+=step) for(let x=0;x<w;x+=step){
+      const c=proj.coordsFromContainerPoint(new K.Point(x-M+step/2,y-M+step/2));
+      const r=limitsAt(c.getLat(),c.getLng()); if(!r.min) continue;
+      const bi=BINS.indexOf(binFor(r.min.h)); if(!binOn[BINS[bi].id]) continue;
+      const col=rgb[bi], a=r.min.ref==='지표'?200:150;
+      for(let yy=y;yy<Math.min(y+step,h);yy++) for(let xx=x;xx<Math.min(x+step,w);xx++){
+        const p=(yy*w+xx)*4; d[p]=col[0];d[p+1]=col[1];d[p+2]=col[2];d[p+3]=a;
+      }
+    }
+    ctx.putImageData(img,0,0); cv.style.visibility='visible';
+  };
+  const heat=new Heat(); heat.setMap(map);
+  let raf=0; const redraw=()=>{ cancelAnimationFrame(raf); raf=requestAnimationFrame(()=>heat.render()); };
+  K.event.addListener(map,'zoom_start',()=>{ heat.cv.style.visibility='hidden'; });
+  K.event.addListener(map,'idle',redraw);
+  window.addEventListener('resize',redraw);
+
+  /* 활주로·라벨·고도지구 윤곽 */
+  let shapes=[];
+  function drawOverlay(){
+    shapes.forEach(s=>s.setMap(null)); shapes=[];
+    if(show.airport) for(const a of AIRPORTS){
+      const hl=a.len/2, dLat=a.uy*hl/a.ky, dLng=a.ux*hl/a.kx;
+      shapes.push(new K.Polyline({map,path:[new K.LatLng(a.lat-dLat,a.lng-dLng),new K.LatLng(a.lat+dLat,a.lng+dLng)],strokeWeight:4,strokeColor:'#17212b',strokeOpacity:1}));
+      shapes.push(new K.CustomOverlay({map,position:new K.LatLng(a.lat,a.lng),xAnchor:0,yAnchor:.5,clickable:false,
+        content:`<div class="ap-label">${a.short} · ${a.kind==='civil'?'민간':'군'}</div>`}));
+    }
+    if(show.zone) for(const z of ZONES){
+      const ring=z.ring.map(p=>new K.LatLng(p[0],p[1]));
+      const path=z.hole?[ring,z.hole.map(p=>new K.LatLng(p[0],p[1]))]:ring;
+      shapes.push(new K.Polygon({map,path,strokeWeight:1.5,strokeColor:'#17212b',strokeStyle:'dash',strokeOpacity:.9,fillOpacity:0}));
+    }
+  }
+  drawOverlay();
+
+  /* 지점 조회 */
+  const probe=$('probe'); let pin=null;
+  const fmt=h=>h===0?'0':h.toFixed(h<10?1:0);
+  function inspect(latlng, label){
+    const lat=latlng.getLat(), lng=latlng.getLng(), r=limitsAt(lat,lng);
+    pin && pin.setMap(null);
+    pin=new K.CustomOverlay({map,position:latlng,xAnchor:0,yAnchor:0,zIndex:5,clickable:false,
+      content:`<div class="pin" style="background:${r.min?binFor(r.min.h).color:'#ffffff'}"></div>`});
+    const where=`${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+    const kakaoLink=`https://map.kakao.com/link/map/${encodeURIComponent(label||'선택 지점')},${lat.toFixed(6)},${lng.toFixed(6)}`;
+    const addrLine=`<div class="addr" id="probeAddr">${label?escapeHtml(label):'주소 확인 중…'}</div>`;
+    probe.classList.remove('empty');
+    if(!r.min){
+      probe.innerHTML=`<div class="big"><b>제한 없음</b></div>${addrLine}<div class="where">${where}</div>
+        <p class="note" style="margin:8px 0 0">이 데모에 들어 있는 비행장 제한표면과 고도지구 밖이에요. 용도지역·경관지구·일조권 같은 다른 규정은 반영하지 않았어요.</p>
+        <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
+    } else {
+      const b=binFor(r.min.h), list=[...r.list].sort((x,y)=>x.h-y.h);
+      const refTxt=r.min.ref==='표고'?`${r.min.src} 표고(${r.min.elev} m) 기준`:'지표 기준';
+      probe.innerHTML=`<div class="big"><b>${fmt(r.min.h)} m</b><span>${refTxt}</span></div>${addrLine}
+        <div class="where">${where}</div>
+        <div class="gov"><span class="sw" style="background:${b.color}"></span><span>${r.min.src} · ${r.min.name}</span></div>
+        <ul>${list.map((o,i)=>`<li class="${i===0?'min':''}"><span>${o.src} ${o.name}</span><span>${fmt(o.h)} m</span></li>`).join('')}</ul>
+        <p class="note" style="margin:8px 0 6px">겹치는 규정 중 가장 낮은 값이 적용돼요.</p>
+        <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
+    }
+    if(!label) geocoder.coord2Address(lng,lat,(res,status)=>{
+      const el=$('probeAddr'); if(!el) return;
+      if(status===K.services.Status.OK && res[0]){
+        const road=res[0].road_address&&res[0].road_address.address_name, jibun=res[0].address&&res[0].address.address_name;
+        el.textContent = road ? `${road} (지번 ${jibun})` : (jibun||'주소 없음');
+      } else el.textContent='주소 정보 없음';
+    });
+  }
+  K.event.addListener(map,'click',e=>inspect(e.latLng));
+
+  /* 주소·장소 검색: 주소 검색 결과를 먼저, 이어서 키워드(장소) 결과 */
+  const results=$('results');
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  let found=[];
+  $('searchForm').addEventListener('submit',e=>{
+    e.preventDefault(); const q=$('q').value.trim(); if(!q) return;
+    results.innerHTML='<li class="msg">검색 중…</li>'; found=[];
+    let pending=2;
+    const done=()=>{ if(--pending) return;
+      if(!found.length){ results.innerHTML='<li class="msg">결과가 없어요. 도로명·지번 주소나 건물 이름으로 다시 검색해 보세요.</li>'; return; }
+      results.innerHTML=found.slice(0,8).map((f,i)=>`<li><button type="button" data-i="${i}"><b>${escapeHtml(f.title)}</b><small>${escapeHtml(f.sub)}</small></button></li>`).join('');
+      if(found.length===1) pick(0);
+    };
+    geocoder.addressSearch(q,(res,status)=>{
+      if(status===K.services.Status.OK) res.forEach(r=>found.unshift({title:r.address_name,sub:r.road_address?`도로명 ${r.road_address.address_name}`:(r.address?`지번 ${r.address.address_name}`:'주소'),x:+r.x,y:+r.y}));
+      done();
+    });
+    places.keywordSearch(q,(res,status)=>{
+      if(status===K.services.Status.OK) res.forEach(r=>found.push({title:r.place_name,sub:r.road_address_name||r.address_name,x:+r.x,y:+r.y}));
+      done();
+    });
+  });
+  function pick(i){
+    const f=found[i]; if(!f) return; const ll=new K.LatLng(f.y,f.x);
+    map.setLevel(4); map.setCenter(ll); inspect(ll,f.title);
+    if(matchMedia('(max-width:640px)').matches){ results.innerHTML=''; }
+  }
+  results.addEventListener('click',e=>{ const b=e.target.closest('button[data-i]'); if(b) pick(+b.dataset.i); });
+
+  /* 범례·레이어 */
+  $('legend').innerHTML=BINS.map(b=>`<label id="lg-${b.id}"><input type="checkbox" id="chk-${b.id}" checked><span class="sw" style="background:${b.color}"></span><span>${b.label}</span><span class="rng">${b.rng}</span></label>`).join('');
+  BINS.forEach(b=>$('chk-'+b.id).addEventListener('change',e=>{ binOn[b.id]=e.target.checked; $('lg-'+b.id).classList.toggle('off',!e.target.checked); redraw(); }));
+  $('lyAirport').addEventListener('change',e=>{ show.airport=e.target.checked; redraw(); drawOverlay(); });
+  $('lyZone').addEventListener('change',e=>{ show.zone=e.target.checked; redraw(); drawOverlay(); });
+
+  /* 바로 가기 */
+  const JUMPS=[
+    {t:'수도권 전체',v:[37.48,126.92],l:9},
+    {t:'김포공항',v:[37.5583,126.7906],l:7},
+    {t:'서울공항·송파',v:[37.48,127.10],l:7},
+    {t:'인천공항',v:[37.4602,126.4407],l:8},
+    {t:'수원·오산',v:[37.16,127.02],l:8},
+    {t:'서울 도심 고도지구',v:[37.585,126.99],l:6},
+    {t:'전국',v:[36.1,127.8],l:12},
+  ];
+  $('chips').innerHTML=JUMPS.map((j,i)=>`<button type="button" data-i="${i}">${j.t}</button>`).join('');
+  $('chips').addEventListener('click',e=>{ const b=e.target.closest('button'); if(!b) return; const j=JUMPS[b.dataset.i]; map.setLevel(j.l); map.setCenter(new K.LatLng(j.v[0],j.v[1])); });
+
+  /* 모바일 시트 */
+  const panel=$('panel'), tg=$('toggleSheet');
+  tg.addEventListener('click',()=>{ const c=panel.classList.toggle('collapsed'); tg.textContent=c?'펼치기':'접기'; tg.setAttribute('aria-expanded',String(!c)); });
+
+  /* 첫 화면: 김포공항 진입표면 아래(양천구 신월동 부근) 예시 조회 */
+  inspect(new K.LatLng(37.5300,126.8420));
+  redraw();
+}
+</script>
+</body>
+</html>
