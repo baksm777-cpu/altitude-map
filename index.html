@@ -150,7 +150,8 @@ body{margin:0}
       <h2>표시 레이어</h2>
       <div class="layers">
         <label><input type="checkbox" id="lyAirport" checked> 비행장 장애물 제한표면 (공항시설법·군사기지법)</label>
-        <label><input type="checkbox" id="lyZone" checked> 서울시 고도지구 (도시계획)</label>
+        <label><input type="checkbox" id="lyZone" checked> <span id="lyZoneLabel">고도지구 (예시 구역)</span></label>
+        <p class="note" id="vwStatus" style="margin:0 0 0 22px" hidden></p>
       </div>
     </section>
 
@@ -186,6 +187,8 @@ body{margin:0}
 <script>
 /* 여기에 JavaScript 키를 넣으면 입력 화면 없이 바로 열려요 */
 const KAKAO_APPKEY = '9b50b3af0a8aade97fc345512cdec835';
+/* 브이월드 인증키를 넣으면 실제 고도지구 경계(국토교통부 LT_C_UQ123)를 불러와요. 비워 두면 예시 구역을 보여줘요. */
+const VWORLD_KEY = '';
 </script>
 <script>
 /* ---------- 색상 구간 ---------- */
@@ -261,9 +264,32 @@ const ZONES = [
   {name:'구기·평창 고도지구', h:24, ring:[[37.6150,126.9530],[37.6160,126.9650],[37.6090,126.9720],[37.6000,126.9700],[37.5990,126.9600],[37.6050,126.9520]]},
   {name:'국회의사당 주변 고도지구', h:65, ring:[[37.5345,126.9110],[37.5350,126.9205],[37.5300,126.9230],[37.5265,126.9180],[37.5275,126.9105]]},
 ];
-for(const z of ZONES){
-  const all=z.ring; z.minLat=Math.min(...all.map(p=>p[0])); z.maxLat=Math.max(...all.map(p=>p[0]));
-  z.minLng=Math.min(...all.map(p=>p[1])); z.maxLng=Math.max(...all.map(p=>p[1]));
+/* 구역 공통 형식: {name, h(숫자 또는 null), polys:[[바깥고리, 구멍...]], info} — 고리는 [lat,lng] 배열 */
+function prepZone(z){
+  if(!z.polys) z.polys=[z.hole?[z.ring,z.hole]:[z.ring]];
+  let a=90,b=-90,c=180,d=-180;
+  for(const poly of z.polys) for(const [la,ln] of poly[0]){ if(la<a)a=la; if(la>b)b=la; if(ln<c)c=ln; if(ln>d)d=ln; }
+  z.minLat=a; z.maxLat=b; z.minLng=c; z.maxLng=d; return z;
+}
+ZONES.forEach(z=>{ prepZone(z); z.sample=true; });
+function inZone(z,lat,lng){
+  if(lat<z.minLat||lat>z.maxLat||lng<z.minLng||lng>z.maxLng) return false;
+  for(const poly of z.polys){
+    if(!pip(poly[0],lat,lng)) continue;
+    let hole=false; for(let i=1;i<poly.length;i++) if(pip(poly[i],lat,lng)){ hole=true; break; }
+    if(!hole) return true;
+  }
+  return false;
+}
+
+/* 실제 고도지구 높이표: 고시문에서 확인한 값을 채워 넣어요. 이름(또는 속성 전체)에 match가 들어 있으면 h를 적용해요.
+   예) {match:'남산', h:20},  — 값이 없으면 지도에 '높이 확인 필요'(보라색)로 표시돼요. */
+const HEIGHT_RULES = [
+];
+function heightFor(name, props){
+  const hay = name+' '+Object.values(props||{}).join(' ');
+  for(const r of HEIGHT_RULES) if(hay.includes(r.match)) return r.h;
+  return null;
 }
 function pip(ring,lat,lng){
   let inside=false;
@@ -280,10 +306,9 @@ function limitsAt(lat,lng){
   const out=[];
   if(show.airport) for(const a of AIRPORTS) airportLimits(a,lat,lng,out);
   if(show.zone) for(const z of ZONES){
-    if(lat<z.minLat||lat>z.maxLat||lng<z.minLng||lng>z.maxLng) continue;
-    if(pip(z.ring,lat,lng) && !(z.hole && pip(z.hole,lat,lng))) out.push({src:'서울시', name:z.name, h:z.h, ref:'지표'});
+    if(inZone(z,lat,lng)) out.push({src:z.sample?'예시':'고도지구', name:z.name, h:z.h, ref:'지표', zone:z});
   }
-  let min=null; for(const o of out){ if(!min||o.h<min.h) min=o; }
+  let min=null; for(const o of out){ if(o.h===null) continue; if(!min||o.h<min.h) min=o; }
   return {list:out, min};
 }
 
@@ -366,13 +391,89 @@ function init(){
       shapes.push(new K.CustomOverlay({map,position:new K.LatLng(a.lat,a.lng),xAnchor:0,yAnchor:.5,clickable:false,
         content:`<div class="ap-label">${a.short} · ${a.kind==='civil'?'민간':'군'}</div>`}));
     }
-    if(show.zone) for(const z of ZONES){
-      const ring=z.ring.map(p=>new K.LatLng(p[0],p[1]));
-      const path=z.hole?[ring,z.hole.map(p=>new K.LatLng(p[0],p[1]))]:ring;
-      shapes.push(new K.Polygon({map,path,strokeWeight:1.5,strokeColor:'#17212b',strokeStyle:'dash',strokeOpacity:.9,fillOpacity:0}));
+    if(show.zone) for(const z of ZONES) for(const poly of z.polys){
+      const path=poly.map(r=>r.map(p=>new K.LatLng(p[0],p[1])));
+      const unknown=z.h===null;
+      shapes.push(new K.Polygon({map,path:path.length>1?path:path[0],strokeWeight:1.5,strokeColor:unknown?'#6b3fa0':'#17212b',
+        strokeStyle:'dash',strokeOpacity:.9,fillColor:'#7c4dbb',fillOpacity:unknown?.28:0}));
     }
   }
   drawOverlay();
+
+  /* ---------- 브이월드 고도지구 (LT_C_UQ123) ---------- */
+  const vwStatus=$('vwStatus');
+  const setStatus=msg=>{ vwStatus.hidden=false; vwStatus.textContent=msg; };
+  const CELL=0.05, MAX_LEVEL=7;   // 0.05° 격자 단위로 요청, 카카오 지도 레벨 7 이하(확대)에서만 불러옴
+  const fetched=new Set(), seen=new Set(); let busy=0, failed=false;
+  function jsonp(url){
+    return new Promise((resolve,reject)=>{
+      const cb='vw_'+Math.random().toString(36).slice(2), s=document.createElement('script');
+      const timer=setTimeout(()=>{ cleanup(); reject(new Error('응답 시간 초과')); },15000);
+      function cleanup(){ clearTimeout(timer); delete window[cb]; s.remove(); }
+      window[cb]=data=>{ cleanup(); resolve(data); };
+      s.onerror=()=>{ cleanup(); reject(new Error('요청 실패')); };
+      s.src=url+'&callback='+cb; document.head.appendChild(s);
+    });
+  }
+  function toZone(f){
+    const p=f.properties||{}, g=f.geometry; if(!g) return null;
+    const polys=(g.type==='MultiPolygon'?g.coordinates:g.type==='Polygon'?[g.coordinates]:[])
+      .map(poly=>poly.map(ring=>ring.map(([x,y])=>[y,x])));
+    if(!polys.length) return null;
+    const name=p.uname||p.alias||p.dgm_nm||'고도지구';
+    const where=[p.sido_name,p.sigg_name].filter(Boolean).join(' ');
+    const notice=p.dnum?`고시 ${p.dnum}${p.dyear?' ('+p.dyear+')':''}`:'';
+    return prepZone({name, h:heightFor(name,p), polys, info:[where,notice].filter(Boolean).join(' · ')});
+  }
+  async function loadCell(i,j){
+    const minx=(i*CELL).toFixed(3), miny=(j*CELL).toFixed(3), maxx=((i+1)*CELL).toFixed(3), maxy=((j+1)*CELL).toFixed(3);
+    for(let page=1; page<=5; page++){
+      const url='https://api.vworld.kr/req/data?service=data&request=GetFeature&data=LT_C_UQ123&format=json&size=1000'
+        +`&page=${page}&geometry=true&attribute=true&crs=EPSG:4326&geomFilter=BOX(${minx},${miny},${maxx},${maxy})`
+        +`&key=${encodeURIComponent(VWORLD_KEY)}&domain=${encodeURIComponent(location.origin)}`;
+      const data=await jsonp(url), res=data&&data.response;
+      if(!res) throw new Error('알 수 없는 응답');
+      if(res.status==='NOT_FOUND') return;
+      if(res.status!=='OK') throw new Error((res.error&&(res.error.text||res.error.code))||res.status);
+      for(const f of res.result.featureCollection.features){
+        const id=f.id||JSON.stringify(f.properties);
+        if(seen.has(id)) continue; seen.add(id);
+        const z=toZone(f); if(z) ZONES.push(z);
+      }
+      const pg=res.page; if(!pg || +pg.current>=+pg.total) return;
+    }
+  }
+  async function loadVisible(){
+    if(!VWORLD_KEY || failed || !show.zone) return;
+    if(map.getLevel()>MAX_LEVEL){ setStatus(`실제 고도지구 ${ZONES.length}개 구역 표시 중 · 지도를 더 확대하면 이 지역도 불러와요`); return; }
+    const b=map.getBounds(), sw=b.getSouthWest(), ne=b.getNorthEast(), jobs=[];
+    for(let i=Math.floor(sw.getLng()/CELL); i<=Math.floor(ne.getLng()/CELL); i++)
+      for(let j=Math.floor(sw.getLat()/CELL); j<=Math.floor(ne.getLat()/CELL); j++){
+        const k=i+','+j; if(fetched.has(k)) continue; fetched.add(k); jobs.push([i,j]);
+      }
+    if(!jobs.length) return;
+    if(jobs.length>40){ jobs.forEach(([i,j])=>fetched.delete(i+','+j)); setStatus('화면이 너무 넓어요. 조금 더 확대하면 고도지구를 불러와요'); return; }
+    busy+=jobs.length; setStatus('브이월드에서 고도지구 불러오는 중…');
+    const queue=[...jobs];
+    async function worker(){
+      while(queue.length && !failed){
+        const [i,j]=queue.shift();
+        try{ await loadCell(i,j); }
+        catch(e){ failed=true; fetched.delete(i+','+j); setStatus(`브이월드 고도지구를 불러오지 못했어요 (${e.message}). 인증키와 등록한 서비스 URL(${location.origin})을 확인해 주세요.`); }
+        busy--;
+      }
+    }
+    await Promise.all([worker(),worker(),worker(),worker()]);
+    if(!failed){ setStatus(`실제 고도지구 ${ZONES.length}개 구역 (브이월드 · 국토교통부)`); }
+    drawOverlay(); redraw();
+  }
+  if(VWORLD_KEY){
+    ZONES.length=0;   // 예시 구역 대신 실제 데이터 사용
+    $('lyZoneLabel').textContent='고도지구 (브이월드 실데이터)';
+    setStatus('지도를 확대하면(레벨 7 이하) 그 지역 고도지구를 불러와요');
+    drawOverlay();
+    K.event.addListener(map,'idle',loadVisible);
+  }
 
   /* 지점 조회 */
   const probe=$('probe'); let pin=null;
@@ -386,18 +487,25 @@ function init(){
     const kakaoLink=`https://map.kakao.com/link/map/${encodeURIComponent(label||'선택 지점')},${lat.toFixed(6)},${lng.toFixed(6)}`;
     const addrLine=`<div class="addr" id="probeAddr">${label?escapeHtml(label):'주소 확인 중…'}</div>`;
     probe.classList.remove('empty');
-    if(!r.min){
+    const unknownZones=r.list.filter(o=>o.h===null);
+    const zoneInfo=r.list.filter(o=>o.zone&&!o.zone.sample).map(o=>`<p class="note" style="margin:6px 0 0"><b>${escapeHtml(o.name)}</b>${o.zone.info?' · '+escapeHtml(o.zone.info):''}</p>`).join('');
+    const unknownNote = unknownZones.length ? `<p class="note" style="margin:8px 0 0">보라색 고도지구는 경계만 실제 데이터이고 <b>최고 높이는 아직 입력되지 않았어요</b>. 고시문에서 확인한 값을 HEIGHT_RULES에 넣으면 계산에 반영돼요.</p>${zoneInfo}` : zoneInfo;
+    if(!r.min && unknownZones.length){
+      probe.innerHTML=`<div class="big"><b>높이 확인 필요</b></div>${addrLine}<div class="where">${where}</div>
+        <div class="gov"><span class="sw" style="background:#7c4dbb"></span><span>${escapeHtml(unknownZones[0].name)}</span></div>${unknownNote}
+        <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
+    } else if(!r.min){
       probe.innerHTML=`<div class="big"><b>제한 없음</b></div>${addrLine}<div class="where">${where}</div>
         <p class="note" style="margin:8px 0 0">이 데모에 들어 있는 비행장 제한표면과 고도지구 밖이에요. 용도지역·경관지구·일조권 같은 다른 규정은 반영하지 않았어요.</p>
         <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
     } else {
-      const b=binFor(r.min.h), list=[...r.list].sort((x,y)=>x.h-y.h);
+      const b=binFor(r.min.h), list=[...r.list].sort((x,y)=>(x.h===null?1e9:x.h)-(y.h===null?1e9:y.h));
       const refTxt=r.min.ref==='표고'?`${r.min.src} 표고(${r.min.elev} m) 기준`:'지표 기준';
       probe.innerHTML=`<div class="big"><b>${fmt(r.min.h)} m</b><span>${refTxt}</span></div>${addrLine}
         <div class="where">${where}</div>
         <div class="gov"><span class="sw" style="background:${b.color}"></span><span>${r.min.src} · ${r.min.name}</span></div>
-        <ul>${list.map((o,i)=>`<li class="${i===0?'min':''}"><span>${o.src} ${o.name}</span><span>${fmt(o.h)} m</span></li>`).join('')}</ul>
-        <p class="note" style="margin:8px 0 6px">겹치는 규정 중 가장 낮은 값이 적용돼요.</p>
+        <ul>${list.map((o,i)=>`<li class="${i===0?'min':''}"><span>${o.src} ${escapeHtml(o.name)}</span><span>${o.h===null?'높이 확인 필요':fmt(o.h)+' m'}</span></li>`).join('')}</ul>
+        <p class="note" style="margin:8px 0 6px">겹치는 규정 중 가장 낮은 값이 적용돼요.</p>${unknownNote}
         <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
     }
     if(!label) geocoder.coord2Address(lng,lat,(res,status)=>{
@@ -443,7 +551,7 @@ function init(){
   $('legend').innerHTML=BINS.map(b=>`<label id="lg-${b.id}"><input type="checkbox" id="chk-${b.id}" checked><span class="sw" style="background:${b.color}"></span><span>${b.label}</span><span class="rng">${b.rng}</span></label>`).join('');
   BINS.forEach(b=>$('chk-'+b.id).addEventListener('change',e=>{ binOn[b.id]=e.target.checked; $('lg-'+b.id).classList.toggle('off',!e.target.checked); redraw(); }));
   $('lyAirport').addEventListener('change',e=>{ show.airport=e.target.checked; redraw(); drawOverlay(); });
-  $('lyZone').addEventListener('change',e=>{ show.zone=e.target.checked; redraw(); drawOverlay(); });
+  $('lyZone').addEventListener('change',e=>{ show.zone=e.target.checked; redraw(); drawOverlay(); if(VWORLD_KEY) loadVisible(); });
 
   /* 바로 가기 */
   const JUMPS=[
