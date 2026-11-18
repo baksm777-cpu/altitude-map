@@ -282,13 +282,31 @@ function inZone(z,lat,lng){
   return false;
 }
 
-/* 실제 고도지구 높이표: 고시문에서 확인한 값을 채워 넣어요. 이름(또는 속성 전체)에 match가 들어 있으면 h를 적용해요.
-   예) {match:'남산', h:20},  — 값이 없으면 지도에 '높이 확인 필요'(보라색)로 표시돼요. */
+/* 브이월드 고도지구는 이름이 모두 '고도지구'라서, 구역 중심 위치로 어느 지구인지 추정해요 (3.5 km 이내 가장 가까운 곳). */
+const AREA_HINTS = [
+  {area:'남산 주변',      lat:37.5512, lng:126.9882},
+  {area:'북한산 주변',    lat:37.6550, lng:127.0150},
+  {area:'경복궁 주변',    lat:37.5800, lng:126.9770},
+  {area:'구기·평창',      lat:37.6070, lng:126.9620},
+  {area:'국회의사당 주변', lat:37.5310, lng:126.9170},
+];
+function areaFor(lat,lng){
+  let best=null, bd=3500;
+  for(const a of AREA_HINTS){
+    const d=Math.hypot((lat-a.lat)*110540,(lng-a.lng)*111320*Math.cos(lat*Math.PI/180));
+    if(d<bd){ bd=d; best=a.area; }
+  }
+  return best;
+}
+/* 실제 고도지구 높이표: 고시문에서 확인한 최고 높이(m)를 채워 넣어요.
+   지구 단위:   {area:'남산 주변', h:20}
+   구역 하나만: {id:'LT_C_UQ123.1396', h:16}   (구역을 누르면 패널에 id가 보여요. id 규칙이 지구 규칙보다 우선)
+   값이 없는 구역은 지도에 '높이 확인 필요'(보라색)로 표시돼요. */
 const HEIGHT_RULES = [
 ];
-function heightFor(name, props){
-  const hay = name+' '+Object.values(props||{}).join(' ');
-  for(const r of HEIGHT_RULES) if(hay.includes(r.match)) return r.h;
+function heightFor(id, area){
+  for(const r of HEIGHT_RULES) if(r.id && r.id===id) return r.h;
+  for(const r of HEIGHT_RULES) if(r.area && r.area===area) return r.h;
   return null;
 }
 function pip(ring,lat,lng){
@@ -420,10 +438,16 @@ function init(){
     const polys=(g.type==='MultiPolygon'?g.coordinates:g.type==='Polygon'?[g.coordinates]:[])
       .map(poly=>poly.map(ring=>ring.map(([x,y])=>[y,x])));
     if(!polys.length) return null;
-    const name=p.uname||p.alias||p.dgm_nm||'고도지구';
+    const id=f.id||p.id||'';
+    const z=prepZone({polys});
+    const area=areaFor((z.minLat+z.maxLat)/2,(z.minLng+z.maxLng)/2);
+    const base=p.uname||'고도지구';
+    z.name = area ? `${area} ${base}` : `${p.sigg_name?p.sigg_name+' ':''}${base}`;
+    z.id=id; z.h=heightFor(id,area);
     const where=[p.sido_name,p.sigg_name].filter(Boolean).join(' ');
-    const notice=p.dnum?`고시 ${p.dnum}${p.dyear?' ('+p.dyear+')':''}`:'';
-    return prepZone({name, h:heightFor(name,p), polys, info:[where,notice].filter(Boolean).join(' · ')});
+    const notice=p.dnum?`${p.dyear?p.dyear+'년 ':''}고시 ${p.dnum}`:'';
+    z.info=[where,notice,area?'지구 이름은 위치로 추정':'',id].filter(Boolean).join(' · ');
+    return z;
   }
   async function loadCell(i,j){
     const minx=(i*CELL).toFixed(3), miny=(j*CELL).toFixed(3), maxx=((i+1)*CELL).toFixed(3), maxy=((j+1)*CELL).toFixed(3);
