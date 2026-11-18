@@ -305,6 +305,33 @@ const HEIGHT_RULES = [
   {area:'오류',       abolished:true, note:'고시 제2024-317호로 고도지구 폐지'},
   {area:'서초동 법원단지 주변', abolished:true, note:'고시 제2024-317호로 고도지구 폐지'},
 ];
+/* 구역(도면 표시번호)별 높이 — 고시 제2024-317호 조서의 '위치' 지번을 카카오 주소검색으로 좌표로 바꾼 뒤,
+   그 좌표가 들어 있는 브이월드 구역에 높이를 붙여요. 지번 대신 동 이름만 있는 곳은 동 대표점을 써요. */
+const SUBAREAS = [
+  // 남산 주변 (변경 후)
+  {area:'남산 주변', no:'4',  h:12, note:'완화 시 20m 이하', pts:['서울 용산구 용산동2가 31','서울 용산구 용산동2가 5-1488']},
+  {area:'남산 주변', no:'20', h:16, note:'완화 시 20m 이하', pts:['서울 중구 회현동1가 146-1','서울 중구 신당동 432-24','서울 용산구 이태원동 193-6','서울 용산구 한남동 741-20']},
+  {area:'남산 주변', no:'15', h:20, pts:['서울 중구 남산동2가 49-49','서울 중구 예장동 1-1','서울 용산구 후암동 402-3']},
+  {area:'남산 주변', no:'5',  h:20, note:'완화 시 28m 이하', pts:['서울 용산구 후암동 443-1']},
+  {area:'남산 주변', no:'21', h:24, note:'완화 시 28m 이하', pts:['서울 중구 회현동1가 164','서울 중구 신당동 432-1979','서울 중구 신당동 432-1632','서울 용산구 이태원동 204-3']},
+  {area:'남산 주변', no:'16', h:28, pts:['서울 중구 회현동1가 143-4','서울 중구 남산동2가 32-3','서울 중구 필동2가 85-1','서울 중구 신당동 432-106','서울 용산구 후암동 244-79','서울 용산구 이태원동 729']},
+  {area:'남산 주변', no:'17', h:32, pts:['서울 중구 신당동 355-7']},
+  {area:'남산 주변', no:'18', h:40, pts:['서울 중구 신당동 369-7']},
+  {area:'남산 주변', no:'19', h:36, pts:['서울 중구 회현동1가 86-3']},
+  {area:'남산 주변', no:'11', h:20, pts:['서울 용산구 이태원동 57-35','서울 용산구 이태원동 56-13','서울 용산구 이태원동 124-7','서울 용산구 이태원동 136-6','서울 용산구 한남동 736-42','서울 용산구 한남동 685-2']},
+  {area:'남산 주변', no:'12', h:28, pts:['서울 용산구 이태원동 123-15','서울 용산구 이태원동 127-7','서울 용산구 이태원동 141-11']},
+  {area:'남산 주변', no:'13', h:15, pts:['서울 용산구 이태원동 57-1','서울 용산구 이태원동 72-16','서울 용산구 이태원동 132-8','서울 용산구 한남동 737-57']},
+  {area:'남산 주변', no:'14', h:23, pts:['서울 용산구 이태원동 137-23']},
+  // 6·7·8구역과 9·10구역은 조서 지번이 같아(한남동 810 / 829) 구역을 특정할 수 없어 범위로 표시
+  {area:'남산 주변', no:'6~8', range:'18~36m', note:'6구역 18m · 7구역 30m · 8구역 36m (지반고 6m 범위 내 건축심의로 낮출 수 있음)', pts:['서울 용산구 한남동 810','서울 용산구 한남동 4-13']},
+  {area:'남산 주변', no:'9~10', range:'18~30m', note:'9구역 18m · 10구역 30m', pts:['서울 용산구 한남동 829']},
+  // 경복궁 주변 (변경 후) — 조서에 지번이 없어 그 구역에만 나오는 동 이름의 대표점 사용
+  {area:'경복궁 주변', no:'2', h:16, pts:['서울 종로구 가회동','서울 종로구 삼청동','서울 종로구 안국동','서울 종로구 팔판동','서울 종로구 소격동','서울 종로구 송현동','서울 종로구 사간동']},
+  {area:'경복궁 주변', no:'4', h:20, pts:['서울 종로구 누상동','서울 종로구 신교동','서울 종로구 사직동']},
+  {area:'경복궁 주변', no:'5', h:24, pts:['서울 종로구 체부동']},
+];
+// 경복궁 서쪽의 남북으로 긴 띠 모양 두 구역: 궁궐 담장 쪽이 1구역(15m, 국공유지 12m), 그 서쪽이 3구역(18m) — 도면 대조
+const GBG_STRIPS = [{no:'1', h:15, note:'국공유지는 12m 이하'}, {no:'3', h:18}];
 function ruleFor(id, area){
   return HEIGHT_RULES.find(r=>r.id && r.id===id) || HEIGHT_RULES.find(r=>r.area && r.area===area) || null;
 }
@@ -448,7 +475,8 @@ function init(){
       if(rule && rule.abolished) continue;   // 폐지된 지구는 표시하지 않음
       const base=p.uname||'고도지구';
       z.name = area ? `${area} ${base}` : `${p.sigg_name?p.sigg_name+' ':''}${base}`;
-      z.id=id; z.h=rule&&rule.h!=null?rule.h:null; z.range=rule&&rule.range||''; z.note=rule&&rule.note||'';
+      z.id=id; z.area=area; z.h=rule&&rule.h!=null?rule.h:null; z.range=rule&&rule.range||''; z.note=rule&&rule.note||'';
+      z.base={h:z.h, range:z.range, note:z.note, name:z.name};
       z.info=[where,notice,id].filter(Boolean).join(' · ');
       out.push(z);
     }
@@ -494,7 +522,45 @@ function init(){
     }
     await Promise.all([worker(),worker(),worker(),worker()]);
     if(!failed){ setStatus(`실제 고도지구 ${ZONES.length}개 구역 (브이월드 · 국토교통부)`); }
-    drawOverlay(); redraw();
+    applySubareas(); drawOverlay(); redraw();
+  }
+
+  /* ---------- 구역별 높이 붙이기 ---------- */
+  const subPts=[];   // {sa, lat, lng}
+  function cacheGet(k){ try{ return JSON.parse(localStorage.getItem('geo:'+k)||'null'); }catch(e){ return null; } }
+  function cacheSet(k,v){ try{ localStorage.setItem('geo:'+k,JSON.stringify(v)); }catch(e){} }
+  function geocode(addr){
+    const c=cacheGet(addr); if(c) return Promise.resolve(c);
+    return new Promise(res=>geocoder.addressSearch(addr,(r,st)=>{
+      const v = st===K.services.Status.OK && r[0] ? {lat:+r[0].y, lng:+r[0].x} : {miss:true};
+      if(st!==K.services.Status.ERROR) cacheSet(addr,v); res(v);
+    }));
+  }
+  async function resolveSubareas(){
+    const jobs=[]; for(const sa of SUBAREAS) for(const a of sa.pts) jobs.push([sa,a]);
+    async function w(){ while(jobs.length){ const [sa,a]=jobs.shift(); const g=await geocode(a); if(!g.miss) subPts.push({sa,lat:g.lat,lng:g.lng}); } }
+    await Promise.all([w(),w(),w()]);
+    applySubareas(); drawOverlay(); redraw();
+  }
+  function setSub(z, sa){
+    z.h = sa.h!=null ? sa.h : null; z.range = sa.range||''; 
+    z.name = `${z.area} 고도지구 ${sa.no}구역`;
+    z.note = [sa.h!=null?`${sa.no}구역 ${sa.h}m 이하`:'', sa.note||'', '구역 번호는 고시 조서 위치(지번·동)로 매칭'].filter(Boolean).join(' · ');
+  }
+  function applySubareas(){
+    const real=ZONES.filter(z=>!z.sample && (z.area==='남산 주변'||z.area==='경복궁 주변'));
+    for(const z of real){ Object.assign(z,{h:z.base.h, range:z.base.range, note:z.base.note, name:z.base.name}); z.sub=null; }
+    for(const z of real){
+      const hits=new Map();
+      for(const p of subPts) if(p.sa.area===z.area && inZone(z,p.lat,p.lng)) hits.set(p.sa.no,p.sa);
+      if(hits.size===1){ const sa=[...hits.values()][0]; setSub(z,sa); z.sub=sa.no; }
+      else if(hits.size>1){ z.note=`여러 구역(${[...hits.keys()].join(', ')}) 지번이 겹쳐 구역을 특정하지 못했어요 · `+z.base.note; }
+    }
+    // 경복궁 서쪽 띠 구역 (남북으로 길쭉하고 아직 구역이 정해지지 않은 것) — 동쪽(담장 쪽)부터 1구역, 3구역
+    const strips=real.filter(z=>z.area==='경복궁 주변' && !z.sub && (z.minLng+z.maxLng)/2<126.9745 &&
+      (z.maxLat-z.minLat)*110540 > 2.5*(z.maxLng-z.minLng)*88200)
+      .sort((a,b)=>(b.minLng+b.maxLng)-(a.minLng+a.maxLng));
+    if(strips.length===2) strips.forEach((z,i)=>{ setSub(z,GBG_STRIPS[i]); z.sub=GBG_STRIPS[i].no; z.note+=' · 띠 모양 구역은 도면 위치로 매칭'; });
   }
   if(VWORLD_KEY){
     ZONES.length=0;   // 예시 구역 대신 실제 데이터 사용
@@ -502,6 +568,7 @@ function init(){
     setStatus('지도를 확대하면(레벨 7 이하) 그 지역 고도지구를 불러와요');
     drawOverlay();
     K.event.addListener(map,'idle',loadVisible);
+    resolveSubareas();
   }
 
   /* 지점 조회 */
