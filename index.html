@@ -162,7 +162,7 @@ body{margin:0}
 
     <section class="sec">
       <h2>이 데모에 대해</h2>
-      <p class="note">비행장 제한표면은 ICAO 기준(민간)과 군 비행안전구역 기준(군·민군겸용)의 <b>표준 치수를 활주로 하나로 단순화</b>해 계산했어요. 높이는 <b>비행장 표고 기준</b>이고, 고도지구는 <b>지표 기준</b>이에요. 고도지구 경계와 높이는 위치를 보여주기 위한 예시예요. 실제 인허가 판단에는 토지이음(eum.go.kr) 토지이용계획과 관할 기관 협의 결과를 확인하세요.</p>
+      <p class="note">비행장 제한표면은 ICAO 기준(민간)과 군 비행안전구역 기준(군·민군겸용)의 <b>표준 치수를 활주로 하나로 단순화</b>해 계산했어요. 높이는 <b>비행장 표고 기준</b>이고, 고도지구는 <b>지표면에서 건물 최상단까지</b>(옥상 3m 이내 승강기탑·계단탑 등 제외) 기준이에요. 고도지구 경계는 브이월드(국토교통부) 실데이터, 높이는 서울특별시 고시 제2024-317호 기준이에요. 실제 인허가 판단에는 토지이음(eum.go.kr) 토지이용계획과 관할 기관 협의 결과를 확인하세요.</p>
       <p class="note"><a href="#" id="resetKey">카카오 앱 키 다시 입력</a></p>
     </section>
   </div>
@@ -282,32 +282,31 @@ function inZone(z,lat,lng){
   return false;
 }
 
-/* 브이월드 고도지구는 이름이 모두 '고도지구'라서, 구역 중심 위치로 어느 지구인지 추정해요 (3.5 km 이내 가장 가까운 곳). */
-const AREA_HINTS = [
-  {area:'남산 주변',      lat:37.5512, lng:126.9882},
-  {area:'북한산 주변',    lat:37.6550, lng:127.0150},
-  {area:'경복궁 주변',    lat:37.5800, lng:126.9770},
-  {area:'구기·평창',      lat:37.6070, lng:126.9620},
-  {area:'국회의사당 주변', lat:37.5310, lng:126.9170},
-];
-function areaFor(lat,lng){
-  let best=null, bd=3500;
-  for(const a of AREA_HINTS){
-    const d=Math.hypot((lat-a.lat)*110540,(lng-a.lng)*111320*Math.cos(lat*Math.PI/180));
-    if(d<bd){ bd=d; best=a.area; }
-  }
-  return best;
-}
-/* 실제 고도지구 높이표: 고시문에서 확인한 최고 높이(m)를 채워 넣어요.
-   지구 단위:   {area:'남산 주변', h:20}
-   구역 하나만: {id:'LT_C_UQ123.1396', h:16}   (구역을 누르면 패널에 id가 보여요. id 규칙이 지구 규칙보다 우선)
-   값이 없는 구역은 지도에 '높이 확인 필요'(보라색)로 표시돼요. */
-const HEIGHT_RULES = [
-];
-function heightFor(id, area){
-  for(const r of HEIGHT_RULES) if(r.id && r.id===id) return r.h;
-  for(const r of HEIGHT_RULES) if(r.area && r.area===area) return r.h;
+/* 브이월드 고도지구는 이름이 모두 '고도지구'라서, 자치구 이름과 위치로 어느 지구인지 정해요.
+   근거: 서울특별시 고시 제2024-317호 (2024.6.27) — docs/ 폴더에 원문 PDF */
+function areaFor(sigg, lat, lng){
+  if(/용산구|중구/.test(sigg)) return '남산 주변';
+  if(/강북구|도봉구/.test(sigg)) return '북한산 주변';
+  if(/동대문구/.test(sigg)) return '배봉산 주변';
+  if(/종로구/.test(sigg)) return lat>=37.596 ? '구기·평창' : '경복궁 주변';
+  if(/구로구/.test(sigg)) return '오류';
+  if(/서초구/.test(sigg)) return '서초동 법원단지 주변';
   return null;
+}
+/* 지구별 최고 높이 (지표면 기준, 고시 제2024-317호 변경 후)
+   h: 지구 전체가 한 가지 높이일 때 / range: 구역(도면 표시번호)마다 다를 때 — 구역별 값은 도면 대조 후 id 규칙으로 넣어요
+   구역 하나만: {id:'LT_C_UQ123.1396', h:16}   (구역을 누르면 패널에 id가 보여요. id 규칙이 지구 규칙보다 우선) */
+const HEIGHT_RULES = [
+  {area:'구기·평창',   h:24, note:'완화 시 28m 이하 · 정비사업 시 경관관리 가이드라인에 따라 최대 45m 범위에서 완화 가능'},
+  {area:'북한산 주변', range:'20~28m', note:'1구역 20m 이하(완화 시 28m), 2구역 28m 이하 · 정비사업 시 최대 45m 범위에서 완화 가능'},
+  {area:'남산 주변',   range:'도로면 이하~40m', note:'도면 표시번호 1~21 구역별로 도로면 이하, 도로면+4m, 12·15·16·18·20·23·24·28·30·32·36·40m 등 차등 · 일부 구역 완화 시 16~28m'},
+  {area:'경복궁 주변', range:'15~24m', note:'구역별 15·16·18·20·24m (1구역 국공유지는 12m 이하)'},
+  {area:'배봉산 주변', range:'해발 44.0~62.6m', note:'조망선 높이 이하 (지표가 아닌 해발 기준)'},
+  {area:'오류',       abolished:true, note:'고시 제2024-317호로 고도지구 폐지'},
+  {area:'서초동 법원단지 주변', abolished:true, note:'고시 제2024-317호로 고도지구 폐지'},
+];
+function ruleFor(id, area){
+  return HEIGHT_RULES.find(r=>r.id && r.id===id) || HEIGHT_RULES.find(r=>r.area && r.area===area) || null;
 }
 function pip(ring,lat,lng){
   let inside=false;
@@ -324,7 +323,7 @@ function limitsAt(lat,lng){
   const out=[];
   if(show.airport) for(const a of AIRPORTS) airportLimits(a,lat,lng,out);
   if(show.zone) for(const z of ZONES){
-    if(inZone(z,lat,lng)) out.push({src:z.sample?'예시':'고도지구', name:z.name, h:z.h, ref:'지표', zone:z});
+    if(inZone(z,lat,lng)) out.push({src:z.sample?'예시':'서울시', name:z.name, h:z.h, ref:'지표', zone:z});
   }
   let min=null; for(const o of out){ if(o.h===null) continue; if(!min||o.h<min.h) min=o; }
   return {list:out, min};
@@ -433,21 +432,27 @@ function init(){
       s.src=url+'&callback='+cb; document.head.appendChild(s);
     });
   }
-  function toZone(f){
-    const p=f.properties||{}, g=f.geometry; if(!g) return null;
+  /* 피처 하나(멀티폴리곤)를 폴리곤마다 나눠서, 각각의 위치로 지구를 판단해요 */
+  function toZones(f){
+    const p=f.properties||{}, g=f.geometry; if(!g) return [];
     const polys=(g.type==='MultiPolygon'?g.coordinates:g.type==='Polygon'?[g.coordinates]:[])
       .map(poly=>poly.map(ring=>ring.map(([x,y])=>[y,x])));
-    if(!polys.length) return null;
     const id=f.id||p.id||'';
-    const z=prepZone({polys});
-    const area=areaFor((z.minLat+z.maxLat)/2,(z.minLng+z.maxLng)/2);
-    const base=p.uname||'고도지구';
-    z.name = area ? `${area} ${base}` : `${p.sigg_name?p.sigg_name+' ':''}${base}`;
-    z.id=id; z.h=heightFor(id,area);
     const where=[p.sido_name,p.sigg_name].filter(Boolean).join(' ');
     const notice=p.dnum?`${p.dyear?p.dyear+'년 ':''}고시 ${p.dnum}`:'';
-    z.info=[where,notice,area?'지구 이름은 위치로 추정':'',id].filter(Boolean).join(' · ');
-    return z;
+    const out=[];
+    for(const poly of polys){
+      const z=prepZone({polys:[poly]});
+      const area=areaFor(p.sigg_name||'',(z.minLat+z.maxLat)/2,(z.minLng+z.maxLng)/2);
+      const rule=ruleFor(id,area);
+      if(rule && rule.abolished) continue;   // 폐지된 지구는 표시하지 않음
+      const base=p.uname||'고도지구';
+      z.name = area ? `${area} ${base}` : `${p.sigg_name?p.sigg_name+' ':''}${base}`;
+      z.id=id; z.h=rule&&rule.h!=null?rule.h:null; z.range=rule&&rule.range||''; z.note=rule&&rule.note||'';
+      z.info=[where,notice,id].filter(Boolean).join(' · ');
+      out.push(z);
+    }
+    return out;
   }
   async function loadCell(i,j){
     const minx=(i*CELL).toFixed(3), miny=(j*CELL).toFixed(3), maxx=((i+1)*CELL).toFixed(3), maxy=((j+1)*CELL).toFixed(3);
@@ -462,7 +467,7 @@ function init(){
       for(const f of res.result.featureCollection.features){
         const id=f.id||JSON.stringify(f.properties);
         if(seen.has(id)) continue; seen.add(id);
-        const z=toZone(f); if(z) ZONES.push(z);
+        ZONES.push(...toZones(f));
       }
       const pg=res.page; if(!pg || +pg.current>=+pg.total) return;
     }
@@ -512,10 +517,10 @@ function init(){
     const addrLine=`<div class="addr" id="probeAddr">${label?escapeHtml(label):'주소 확인 중…'}</div>`;
     probe.classList.remove('empty');
     const unknownZones=r.list.filter(o=>o.h===null);
-    const zoneInfo=r.list.filter(o=>o.zone&&!o.zone.sample).map(o=>`<p class="note" style="margin:6px 0 0"><b>${escapeHtml(o.name)}</b>${o.zone.info?' · '+escapeHtml(o.zone.info):''}</p>`).join('');
-    const unknownNote = unknownZones.length ? `<p class="note" style="margin:8px 0 0">보라색 고도지구는 경계만 실제 데이터이고 <b>최고 높이는 아직 입력되지 않았어요</b>. 고시문에서 확인한 값을 HEIGHT_RULES에 넣으면 계산에 반영돼요.</p>${zoneInfo}` : zoneInfo;
+    const zoneInfo=r.list.filter(o=>o.zone&&!o.zone.sample).map(o=>`<p class="note" style="margin:6px 0 0"><b>${escapeHtml(o.name)}</b>${o.zone.note?'<br>'+escapeHtml(o.zone.note):''}<br>${escapeHtml(o.zone.info||'')}</p>`).join('');
+    const unknownNote = unknownZones.length ? `<p class="note" style="margin:8px 0 0">보라색 구역은 같은 지구 안에서도 구역마다 높이가 달라요. 정확한 값은 고시 도면이나 토지이음(eum.go.kr)에서 필지별로 확인하세요.</p>${zoneInfo}` : zoneInfo;
     if(!r.min && unknownZones.length){
-      probe.innerHTML=`<div class="big"><b>높이 확인 필요</b></div>${addrLine}<div class="where">${where}</div>
+      probe.innerHTML=`<div class="big"><b>${escapeHtml(unknownZones[0].zone.range||'높이 확인 필요')}</b><span>구역별 상이</span></div>${addrLine}<div class="where">${where}</div>
         <div class="gov"><span class="sw" style="background:#7c4dbb"></span><span>${escapeHtml(unknownZones[0].name)}</span></div>${unknownNote}
         <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
     } else if(!r.min){
@@ -528,7 +533,7 @@ function init(){
       probe.innerHTML=`<div class="big"><b>${fmt(r.min.h)} m</b><span>${refTxt}</span></div>${addrLine}
         <div class="where">${where}</div>
         <div class="gov"><span class="sw" style="background:${b.color}"></span><span>${r.min.src} · ${r.min.name}</span></div>
-        <ul>${list.map((o,i)=>`<li class="${i===0?'min':''}"><span>${o.src} ${escapeHtml(o.name)}</span><span>${o.h===null?'높이 확인 필요':fmt(o.h)+' m'}</span></li>`).join('')}</ul>
+        <ul>${list.map((o,i)=>`<li class="${i===0?'min':''}"><span>${o.src} ${escapeHtml(o.name)}</span><span>${o.h===null?escapeHtml(o.zone.range||'높이 확인 필요'):fmt(o.h)+' m'}</span></li>`).join('')}</ul>
         <p class="note" style="margin:8px 0 6px">겹치는 규정 중 가장 낮은 값이 적용돼요.</p>${unknownNote}
         <a href="${kakaoLink}" target="_blank" rel="noopener">카카오맵에서 크게 보기 ↗</a>`;
     }
